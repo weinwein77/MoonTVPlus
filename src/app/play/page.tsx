@@ -6142,15 +6142,17 @@ function PlayPageClient() {
         }
 
         // 动态导入播放器库
-        const [ArtplayerModule, HlsModule, DanmukuPlugin] = await Promise.all([
+        const [ArtplayerModule, HlsModule, DanmukuPlugin, AutoThumbnailPlugin] = await Promise.all([
           import('artplayer'),
           import('hls.js'),
           import('artplayer-plugin-danmuku'),
+          import('artplayer-plugin-auto-thumbnail'),
         ]);
 
         const Artplayer = ArtplayerModule.default;
         const Hls = HlsModule.default;
         const artplayerPluginDanmuku = DanmukuPlugin.default as any;
+        const artplayerPluginAutoThumbnail = AutoThumbnailPlugin.default as any;
         const playerTimeouts = new Set<number>();
         const clearTrackedTimeout = (timeoutId: number | null) => {
           if (timeoutId == null) {
@@ -6563,8 +6565,13 @@ function PlayPageClient() {
               });
             },
           },
-          // 弹幕插件
           plugins: [
+            artplayerPluginAutoThumbnail({
+              url: videoUrl,
+              width: 160,
+              number: 100,
+              scale: 1,
+            }),
             artplayerPluginDanmuku({
               danmuku: [],
               speed: danmakuSettingsRef.current.speed,

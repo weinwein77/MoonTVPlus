@@ -40,6 +40,7 @@
     "@xmldom/xmldom": "^0.9.10",
     "anime4k-webgpu": "^1.0.0",
     "artplayer": "^5.4.0",
+    "artplayer-plugin-auto-thumbnail": "^1.1.0",
     "artplayer-plugin-danmuku": "^5.2.0",
     "better-sqlite3": "^12.6.2",
     "bs58": "^6.0.0",
