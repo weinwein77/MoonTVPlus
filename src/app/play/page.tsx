@@ -8969,9 +8969,9 @@ function PlayPageClient() {
               setVideoError('视频无法在浏览器中播放（已尝试代理，格式不兼容）');
             } else if (currentSourceRef.current === 'directplay' && !currentUrl.includes('/api/proxy-m3u8')) {
               setCorsFailedUrl(currentUrl);
-              setVideoError('视频播放失败（格式不支持或跨域限制）');
+              setVideoError('视频播放失败');
             } else {
-              setVideoError('视频播放失败（格式不支持或跨域限制）');
+              setVideoError('视频播放失败');
             }
           }
         });
