@@ -32,6 +32,7 @@ function maskTelegramConfig(config: AdminConfig['TelegramConfig']) {
     apiBaseUrl: config?.apiBaseUrl || '',
     loginEnabled: config?.loginEnabled !== false,
     bindingEnabled: config?.bindingEnabled !== false,
+    registrationEnabled: config?.registrationEnabled === true,
     notificationsEnabled: config?.notificationsEnabled !== false,
     defaultNotifications: config?.defaultNotifications !== false,
   };

@@ -1,13 +1,14 @@
 /* eslint-disable no-console,@typescript-eslint/no-explicit-any */
 
-import type { NextRequest } from 'next/server';
-
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import type { NextRequest } from 'next/server';
 import nodeFetch from 'node-fetch';
 
 import type { AdminConfig } from './admin.types';
 import { generateAuthCookieValue } from './auth-cookie';
+import { getConfig } from './config';
 import { db, getStorage } from './db';
+import { lockManager } from './lock';
 import type { IStorage, Notification } from './types';
 import { getNotificationClickUrl } from './web-push';
 
@@ -20,6 +21,7 @@ export interface TelegramConfig {
   apiBaseUrl: string;
   loginEnabled: boolean;
   bindingEnabled: boolean;
+  registrationEnabled: boolean;
   notificationsEnabled: boolean;
   defaultNotifications: boolean;
 }
@@ -107,6 +109,7 @@ function readEnvTelegramConfig(): TelegramConfig {
     apiBaseUrl: process.env.TELEGRAM_API_BASE_URL || '',
     loginEnabled: process.env.TELEGRAM_LOGIN_ENABLED !== 'false',
     bindingEnabled: process.env.TELEGRAM_BINDING_ENABLED !== 'false',
+    registrationEnabled: process.env.TELEGRAM_REGISTRATION_ENABLED === 'true',
     notificationsEnabled: process.env.TELEGRAM_NOTIFICATIONS_ENABLED !== 'false',
     defaultNotifications: process.env.TELEGRAM_DEFAULT_NOTIFICATIONS !== 'false',
   };
@@ -125,6 +128,7 @@ function mergeAdminTelegramConfig(base: TelegramConfig, admin?: AdminConfig | nu
     apiBaseUrl: cfg.apiBaseUrl || base.apiBaseUrl,
     loginEnabled: cfg.loginEnabled ?? base.loginEnabled,
     bindingEnabled: cfg.bindingEnabled ?? base.bindingEnabled,
+    registrationEnabled: cfg.registrationEnabled ?? base.registrationEnabled,
     notificationsEnabled: cfg.notificationsEnabled ?? base.notificationsEnabled,
     defaultNotifications: cfg.defaultNotifications ?? base.defaultNotifications,
   };
@@ -229,6 +233,89 @@ export async function unbindTelegramUser(telegramUserId: string): Promise<boolea
 
   await db.deleteTelegramBindingByTelegramUserId(telegramUserId);
   return true;
+}
+
+export async function registerTelegramUser(input: {
+  username: string;
+  password: string;
+  telegramUserId: string;
+  chatId: string;
+  telegramUsername?: string;
+  firstName?: string;
+  lastName?: string;
+}): Promise<TelegramBinding> {
+  const config = await getTelegramConfig();
+  if (!config.registrationEnabled) {
+    throw new Error('Telegram 注册未开启，请联系管理员在后台开启。');
+  }
+
+  const storageType =
+    (process.env.NEXT_PUBLIC_STORAGE_TYPE as
+      | 'localstorage'
+      | 'redis'
+      | 'upstash'
+      | 'kvrocks'
+      | undefined) || 'localstorage';
+  if (storageType === 'localstorage') {
+    throw new Error('localStorage 模式不支持注册功能');
+  }
+
+  const username = input.username.trim();
+  const password = input.password;
+
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    throw new Error('用户名只能包含字母、数字、下划线，长度3-20位');
+  }
+  if (password.length < 6) {
+    throw new Error('密码长度至少为6位');
+  }
+  if (username === process.env.USERNAME) {
+    throw new Error('该用户名不可用');
+  }
+
+  const existingBinding = await getTelegramBindingByTelegramUser(input.telegramUserId);
+  if (existingBinding) {
+    throw new Error(`当前 Telegram 已绑定账号：${existingBinding.username}`);
+  }
+
+  let releaseLock: (() => void) | null = null;
+  try {
+    releaseLock = await lockManager.acquire(`register:${username}`);
+  } catch {
+    throw new Error('服务器繁忙，请稍后重试');
+  }
+
+  try {
+    const userExists = await db.checkUserExistV2(username);
+    if (userExists) {
+      throw new Error('用户名已存在');
+    }
+
+    const siteConfig = (await getConfig()).SiteConfig;
+    const defaultTags =
+      siteConfig.DefaultUserTags && siteConfig.DefaultUserTags.length > 0
+        ? siteConfig.DefaultUserTags
+        : undefined;
+
+    await db.createUserV2(username, password, 'user', defaultTags);
+
+    const binding: TelegramBinding = {
+      username,
+      telegramUserId: input.telegramUserId,
+      chatId: input.chatId,
+      telegramUsername: input.telegramUsername,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      notificationsEnabled: config.defaultNotifications,
+      boundAt: now(),
+      updatedAt: now(),
+    };
+
+    await db.upsertTelegramBinding(binding);
+    return binding;
+  } finally {
+    releaseLock?.();
+  }
 }
 
 export async function createTelegramLoginSession(): Promise<TelegramLoginSession> {
@@ -486,7 +573,7 @@ export function getTelegramDeepLink(botUsername: string, payload: string) {
 
 export function getTelegramConfigProblems(
   config: TelegramConfig,
-  feature?: 'login' | 'binding' | 'notifications'
+  feature?: 'login' | 'binding' | 'registration' | 'notifications'
 ): string[] {
   const problems: string[] = [];
   if (!config.enabled) problems.push('总开关未开启');
@@ -494,6 +581,7 @@ export function getTelegramConfigProblems(
   if ((feature === 'login' || feature === 'binding') && !config.botUsername) problems.push('Bot 用户名为空');
   if (feature === 'login' && !config.loginEnabled) problems.push('Telegram 登录开关未开启');
   if (feature === 'binding' && !config.bindingEnabled) problems.push('Telegram 绑定开关未开启');
+  if (feature === 'registration' && !config.registrationEnabled) problems.push('Telegram 注册开关未开启');
   if (feature === 'notifications' && !config.notificationsEnabled) problems.push('Telegram 通知开关未开启');
   return problems;
 }
@@ -511,11 +599,23 @@ function parseMessageText(update: any) {
   };
 }
 
+function buildTelegramHelpText(config: TelegramConfig) {
+  return [
+    'MoonTVPlus Telegram Bot 已连接。',
+    '',
+    '可用命令：',
+    config.registrationEnabled ? '/register 用户名 密码 - 注册并绑定账号' : '',
+    '/bind 绑定码 - 绑定账号',
+    '/status - 查看状态',
+    '/unbind - 解除绑定',
+  ].filter(Boolean).join('\n');
+}
+
 export async function handleTelegramWebhookUpdate(update: any): Promise<void> {
   const parsed = parseMessageText(update);
   if (parsed) {
     if (/^\/start$/i.test(parsed.text)) {
-      await sendTelegramMessage(parsed.chatId, 'MoonTVPlus Telegram Bot 已连接。\n\n可用命令：\n/bind 绑定码 - 绑定账号\n/status - 查看状态\n/unbind - 解除绑定');
+      await sendTelegramMessage(parsed.chatId, buildTelegramHelpText(await getTelegramConfig()));
       return;
     }
 
@@ -545,6 +645,26 @@ export async function handleTelegramWebhookUpdate(update: any): Promise<void> {
       return;
     }
 
+    if (/^\/register$/i.test(parsed.text)) {
+      await sendTelegramMessage(parsed.chatId, '请发送：\n/register 用户名 密码\n\n用户名只能包含字母、数字、下划线，长度3-20位；密码至少6位。');
+      return;
+    }
+
+    const registerMatch = parsed.text.match(/^\/register\s+(\S+)\s+(\S+)$/i);
+    if (registerMatch) {
+      try {
+        const binding = await registerTelegramUser({
+          ...parsed,
+          username: registerMatch[1],
+          password: registerMatch[2],
+        });
+        await sendTelegramMessage(parsed.chatId, `注册成功：${binding.username}\n当前 Telegram 已自动绑定该账号。`);
+      } catch (error) {
+        await sendTelegramMessage(parsed.chatId, error instanceof Error ? error.message : '注册失败');
+      }
+      return;
+    }
+
     if (/^\/unbind$/i.test(parsed.text)) {
       const ok = await unbindTelegramUser(parsed.telegramUserId);
       await sendTelegramMessage(parsed.chatId, ok ? '已解除 Telegram 绑定。' : '当前 Telegram 账号尚未绑定。');
@@ -557,7 +677,7 @@ export async function handleTelegramWebhookUpdate(update: any): Promise<void> {
       return;
     }
 
-    await sendTelegramMessage(parsed.chatId, '可用命令：\n/bind 绑定码 - 绑定账号\n/status - 查看状态\n/unbind - 解除绑定');
+    await sendTelegramMessage(parsed.chatId, buildTelegramHelpText(await getTelegramConfig()));
     return;
   }
 

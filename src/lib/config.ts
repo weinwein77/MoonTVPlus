@@ -340,6 +340,7 @@ async function getInitConfig(
       apiBaseUrl: process.env.TELEGRAM_API_BASE_URL || '',
       loginEnabled: process.env.TELEGRAM_LOGIN_ENABLED !== 'false',
       bindingEnabled: process.env.TELEGRAM_BINDING_ENABLED !== 'false',
+      registrationEnabled: process.env.TELEGRAM_REGISTRATION_ENABLED === 'true',
       notificationsEnabled: process.env.TELEGRAM_NOTIFICATIONS_ENABLED !== 'false',
       defaultNotifications: process.env.TELEGRAM_DEFAULT_NOTIFICATIONS !== 'false',
     },
@@ -588,9 +589,14 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
       apiBaseUrl: process.env.TELEGRAM_API_BASE_URL || '',
       loginEnabled: process.env.TELEGRAM_LOGIN_ENABLED !== 'false',
       bindingEnabled: process.env.TELEGRAM_BINDING_ENABLED !== 'false',
+      registrationEnabled: process.env.TELEGRAM_REGISTRATION_ENABLED === 'true',
       notificationsEnabled: process.env.TELEGRAM_NOTIFICATIONS_ENABLED !== 'false',
       defaultNotifications: process.env.TELEGRAM_DEFAULT_NOTIFICATIONS !== 'false',
     };
+  }
+  if (adminConfig.TelegramConfig.registrationEnabled === undefined) {
+    adminConfig.TelegramConfig.registrationEnabled =
+      process.env.TELEGRAM_REGISTRATION_ENABLED === 'true';
   }
   if (adminConfig.SiteConfig.PansouKeywordBlocklist === undefined) {
     adminConfig.SiteConfig.PansouKeywordBlocklist = '';

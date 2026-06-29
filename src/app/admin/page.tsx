@@ -13959,6 +13959,7 @@ const TelegramConfigComponent = ({
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [loginEnabled, setLoginEnabled] = useState(true);
   const [bindingEnabled, setBindingEnabled] = useState(true);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [defaultNotifications, setDefaultNotifications] = useState(true);
   const [testChatId, setTestChatId] = useState('');
@@ -13974,6 +13975,7 @@ const TelegramConfigComponent = ({
       setApiBaseUrl(telegram.apiBaseUrl || '');
       setLoginEnabled(telegram.loginEnabled !== false);
       setBindingEnabled(telegram.bindingEnabled !== false);
+      setRegistrationEnabled(telegram.registrationEnabled === true);
       setNotificationsEnabled(telegram.notificationsEnabled !== false);
       setDefaultNotifications(telegram.defaultNotifications !== false);
     }
@@ -13988,6 +13990,7 @@ const TelegramConfigComponent = ({
     apiBaseUrl,
     loginEnabled,
     bindingEnabled,
+    registrationEnabled,
     notificationsEnabled,
     defaultNotifications,
   });
@@ -14014,7 +14017,10 @@ const TelegramConfigComponent = ({
   const handleSetWebhook = async () => {
     await withLoading('setTelegramWebhook', async () => {
       try {
-        if (!enabled || !botToken.trim() || !botUsername.trim() || !webhookSecret.trim()) {
+        if (!enabled) {
+          throw new Error('请先开启 Telegram Bot');
+        }
+        if (!botToken.trim() || !botUsername.trim() || !webhookSecret.trim()) {
           throw new Error('请先填写 Bot Token、Bot 用户名 和 Webhook Secret');
         }
 
@@ -14081,6 +14087,7 @@ const TelegramConfigComponent = ({
         </h3>
         <div className='text-sm text-sky-800 dark:text-sky-200 space-y-1'>
           <p>• 支持用户绑定 Telegram、快捷确认登录和站内通知推送</p>
+          <p>• 开启 Telegram 注册后，用户可在 Bot 中发送 /register 用户名 密码 注册账号</p>
           <p>• Webhook 地址需在 Telegram Bot API 中手动设置</p>
           <p>• Bot Token 和 Webhook Secret 仅服务端保存，不会暴露给前端</p>
         </div>
@@ -14136,6 +14143,7 @@ const TelegramConfigComponent = ({
         <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-gray-200 p-4 dark:border-gray-700'>
           {[
             ['允许绑定', bindingEnabled, setBindingEnabled],
+            ['允许 Telegram 注册', registrationEnabled, setRegistrationEnabled],
             ['允许 Telegram 登录', loginEnabled, setLoginEnabled],
             ['启用 Telegram 通知', notificationsEnabled, setNotificationsEnabled],
             ['新绑定默认开启通知', defaultNotifications, setDefaultNotifications],

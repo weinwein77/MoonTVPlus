@@ -351,6 +351,7 @@ export interface AdminConfig {
     apiBaseUrl?: string; // Telegram Bot API 反代 Base URL
     loginEnabled?: boolean; // 是否启用 Telegram 登录
     bindingEnabled?: boolean; // 是否启用用户绑定
+    registrationEnabled?: boolean; // 是否启用 Telegram 注册
     notificationsEnabled?: boolean; // 是否启用 Telegram 通知
     defaultNotifications?: boolean; // 新绑定用户默认开启通知
   };
